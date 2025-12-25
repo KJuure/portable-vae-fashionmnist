@@ -66,3 +66,36 @@ def save_recon_pairs_grid(x: torch.Tensor, x_hat: torch.Tensor, path: str, cols:
     plt.tight_layout()
     plt.savefig(path, dpi=200)
     plt.close(fig)
+
+
+def save_latent_interpolation(model, x_batch, device, out_path, steps: int = 12):
+    """
+    Saves a 1xN row showing interpolation between two inputs in latent space.
+    Uses mu (deterministic) rather than sampled z to reduce noise.
+    """
+    # Set model to evaluation mode
+    model.eval()
+
+    x = x_batch.to(device)
+    x_a = x[0:1] # (1, 1, 28, 28)
+    x_b = x[1:2]
+
+    mu_a, _ = model.encode(x_a) # (1, z_dim)
+    mu_b, _ = model.encode(x_b)
+
+    alphas = torch.linspace(0.0, 1.0, steps, device=device).view(-1, 1) # (steps, 1)
+    z = (1.0 - alphas) * mu_a + alphas * mu_b # (steps, z_dim)
+
+    logits = model.decode_logits(z) # (steps, 1, 28, 28)
+    imgs = torch.sigmoid(logits).clamp(0.0, 1.0)
+
+    # Save as a single row grid without assuming square grids
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+
+    fig, axes = plt.subplots(1, steps, figsize=(steps, 1), squeeze=False)
+    for i in range(steps):
+        axes[0, i].axis("off")
+        axes[0,i].imshow(imgs[i, 0].detach().cpu(), cmap="gray")
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=200)
+    plt.close(fig)

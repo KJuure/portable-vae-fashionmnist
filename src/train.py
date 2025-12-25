@@ -1,13 +1,14 @@
 import os
 import csv
 import argparse
+import math
 
 import torch
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
 from model import ConvVAE, vae_loss_bce_logits
-from viz import save_image_grid, save_recon_pairs_grid
+from viz import save_image_grid, save_recon_pairs_grid, save_latent_interpolation
 
 
 def set_seed(seed: int):
@@ -44,10 +45,22 @@ def get_device(prefer: str = "auto"):
         try:
             import torch_directml
             return torch_directml.device()
-        except Exception:
-            pass
+        except Exception as e:
+            raise RuntimeError(f"DirectML requested but not available: {repr(e)}")
 
     return torch.device("cpu")
+
+
+def move_optimizer_to_device(optimizer, device):
+    """
+    After loading an optimizer state_dict (often stored on CPU),
+    move any tensor states to the current device so training can resume
+    on CUDA/DirectML without device mismatch errors.
+    """
+    for state in optimizer.state.values():
+        for k, v in state.items():
+            if torch.is_tensor(v):
+                state[k] = v.to(device)
 
 
 @torch.no_grad()
@@ -96,15 +109,57 @@ def main():
     ap.add_argument("--lr", type=float, default=2e-4)
     ap.add_argument("--z_dim", type=int, default=32)
     ap.add_argument("--beta", type=float, default=1.0)
+    ap.add_argument("--beta_warmup_epochs", type=int, default=5)
     ap.add_argument("--seed", type=int, default=1337)
     ap.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "cuda", "directml", "mps"])
     ap.add_argument("--num_workers", type=int, default=0)  # 0 is safest on Windows
     ap.add_argument("--out_dir", type=str, default="artifacts")
+
+    # --- Saving / checkpointing options (mutually exclusive) ---
+    save_group = ap.add_mutually_exclusive_group()
+    save_group.add_argument(
+        "--save_best",
+        action="store_true",
+        help="Save only the best model (overwrites best.pt when metric improves)."
+    )
+    save_group.add_argument(
+        "--save_checkpoints",
+        action="store_true",
+        help="Save periodic checkpoints (vae_epochXXX.pt) to ckpt_dir."
+    )
+
+    # Best-model selection options (used only with --save_best)
+    ap.add_argument("--best_metric", type=str, default="total",
+                    choices=["total", "recon", "kl"],
+                    help="Metric to minimize when selecting the best epoch.")
+    ap.add_argument("--best_split", type=str, default="test",
+                    choices=["test", "train"],
+                    help="Split used for selecting best epoch.")
+    ap.add_argument("--best_path", type=str, default="",
+                    help="Optional explicit path for best checkpoint. Default: <out_dir>/best.pt")
+
+    # Periodic checkpoint options (used only with --save_checkpoints)
+    ap.add_argument("--ckpt_dir", type=str, default="checkpoints",
+                    help="Directory to write periodic checkpoints.")
+    ap.add_argument("--save_every", type=int, default=5,
+                    help="Save a checkpoint every N epochs (only with --save_checkpoints).")
+    # Resume works with either mode (best.pt or vae_epochXXX.pt)
+    ap.add_argument("--resume", type=str, default="",
+                    help="Path to a checkpoint to resume from (best.pt or vae_epochXXX.pt).")
+
     args = ap.parse_args()
 
     set_seed(args.seed)
     device = get_device(args.device)
     os.makedirs(args.out_dir, exist_ok=True)
+
+    # Prepare saving paths / state
+    best_path = args.best_path if args.best_path else os.path.join(args.out_dir, "best.pt")
+    best_value = math.inf
+    best_epoch = -1
+
+    if args.save_checkpoints:
+        os.makedirs(args.ckpt_dir, exist_ok=True)
 
     print("Using device:", device)
 
@@ -136,6 +191,32 @@ def main():
     model = ConvVAE(z_dim=args.z_dim).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
 
+    start_epoch = 0
+    if args.resume:
+        ckpt = torch.load(args.resume, map_location="cpu")
+        model.load_state_dict(ckpt["model"])
+        opt.load_state_dict(ckpt["opt"])
+        move_optimizer_to_device(opt, device)
+        start_epoch = int(ckpt.get("epoch", -1)) + 1
+
+        # If resuming from a best checkpoint that stored these fields, restore them
+        if "best_value" in ckpt:
+            best_value = float(ckpt["best_value"])
+        if "best_epoch" in ckpt:
+            best_epoch = int(ckpt["best_epoch"])
+
+        print(f"Resumed from {args.resume} at epoch {start_epoch}")
+
+    os.makedirs(args.ckpt_dir, exist_ok=True)
+
+    start_epoch = 0
+    if args.resume:
+        ckpt = torch.load(args.resume, map_location="cpu")
+        model.load_state_dict(ckpt["model"])
+        opt.load_state_dict(ckpt["opt"])
+        start_epoch = int(ckpt.get("epoch", -1)) + 1
+        print(f"Resumed from {args.resume} at epoch {start_epoch}")
+
     # Metrics file (append-friendly)
     metrics_path = os.path.join(args.out_dir, "metrics.csv")
     write_header = not os.path.exists(metrics_path)
@@ -148,7 +229,11 @@ def main():
         if write_header:
             writer.writerow(["epoch", "split", "total", "recon", "kl"])
 
-        for epoch in range(args.epochs):
+        for epoch in range(start_epoch, args.epochs):
+            # Dynamic Beta
+            warm = max(1, args.beta_warmup_epochs)
+            beta_eff = args.beta * min(1.0, float(epoch + 1) / float(warm))
+
             # -------- Train --------
             model.train()
             tr_tot = tr_rec = tr_kl = 0.0
@@ -158,7 +243,7 @@ def main():
                 x = x.to(device)
 
                 logits, mu, logvar = model(x)
-                loss, recon, kl = vae_loss_bce_logits(x, logits, mu, logvar, beta=args.beta)
+                loss, recon, kl = vae_loss_bce_logits(x, logits, mu, logvar, beta=beta_eff)
 
                 opt.zero_grad(set_to_none=True)
                 loss.backward()
@@ -184,7 +269,7 @@ def main():
                 for x, _ in test_loader:
                     x = x.to(device)
                     logits, mu, logvar = model(x)
-                    loss, recon, kl = vae_loss_bce_logits(x, logits, mu, logvar, beta=args.beta)
+                    loss, recon, kl = vae_loss_bce_logits(x, logits, mu, logvar, beta=beta_eff)
 
                     bs = x.size(0)
                     te_tot += loss.item() * bs
@@ -204,7 +289,71 @@ def main():
                 f"test total={te_tot:.2f} recon={te_rec:.2f} kl={te_kl:.2f}"
             )
 
-            save_recons_and_samples(model, x_vis, device, args.out_dir, epoch, args.z_dim)
+            save_recons_and_samples(
+                model,
+                x_vis,
+                device,
+                args.out_dir,
+                epoch,
+                args.z_dim
+            )
+            save_latent_interpolation(
+                model,
+                x_vis,
+                device,
+                out_path=os.path.join(args.out_dir, f"interp_epoch{epoch:03d}.png"),
+                steps = 12
+            )
+
+            # -------------------------
+            # Save best OR save checkpoints (mutually exclusive)
+            # -------------------------
+            if args.save_best:
+                if args.best_split == "test":
+                    metric_map = {"total": te_tot, "recon": te_rec, "kl": te_kl}
+                else:
+                    metric_map = {"total": tr_tot, "recon": tr_rec, "kl": tr_kl}
+
+                candidate = float(metric_map[args.best_metric])
+
+                if candidate < best_value:
+                    best_value = candidate
+                    best_epoch = epoch
+
+                    torch.save(
+                        {
+                            "epoch": epoch,
+                            "best_value": best_value,
+                            "best_epoch": best_epoch,
+                            "best_metric": args.best_metric,
+                            "best_split": args.best_split,
+                            "model": model.state_dict(),
+                            "opt": opt.state_dict(),
+                            "args": vars(args),
+                            "train": {"total": tr_tot, "recon": tr_rec, "kl": tr_kl},
+                            "test": {"total": te_tot, "recon": te_rec, "kl": te_kl},
+                        },
+                        best_path
+                    )
+                    print(
+                        f"[best] saved {best_path} | epoch={best_epoch} {args.best_split}.{args.best_metric}={best_value:.4f}")
+
+            elif args.save_checkpoints:
+                should_save = ((epoch + 1) % args.save_every == 0) or (epoch == args.epochs - 1)
+                if should_save:
+                    ckpt_path = os.path.join(args.ckpt_dir, f"vae_epoch{epoch:03d}.pt")
+                    torch.save(
+                        {
+                            "epoch": epoch,
+                            "model": model.state_dict(),
+                            "opt": opt.state_dict(),
+                            "args": vars(args),
+                            "train": {"total": tr_tot, "recon": tr_rec, "kl": tr_kl},
+                            "test": {"total": te_tot, "recon": te_rec, "kl": te_kl},
+                        },
+                        ckpt_path
+                    )
+                    print(f"[ckpt] saved {ckpt_path}")
 
 
 if __name__ == "__main__":
