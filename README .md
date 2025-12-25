@@ -109,5 +109,9 @@ During training, the script writes:
 - `kl`: KL divergence between `q(z|x)` and `N(0, I)` (non-zero indicates latent usage)
 - `total = recon + beta * kl`
 
-## License
-Choose a license (MIT is common for portfolio repos).
+## This repo includes a GAN implementation
+The VAE baseline lives on the `main` branch (tag: `v0.1-vae`).
+
+A GAN implementation is developed on the **`gan` branch**:
+- Switch branches on GitHub to `gan` to view the GAN training code and results.
+- The `gan` branch adds WGAN training scripts while keeping the VAE baseline intact.
