@@ -110,7 +110,7 @@ During training, the script writes:
 - `total = recon + beta * kl`
 
 ## This repo includes a GAN implementation
-The VAE baseline lives on the `main` branch (tag: `v0.1-vae`).
+The VAE baseline lives on the `master` branch (tag: `v0.1-vae`).
 
 A GAN implementation is developed on the **`gan` branch**:
 - Switch branches on GitHub to `gan` to view the GAN training code and results.
