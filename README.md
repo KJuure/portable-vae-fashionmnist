@@ -1,11 +1,20 @@
-# portable-vae-fashionmnist
+# Generative Models (PyTorch) — VAE baseline, expanding to GANs
 
-A compact, device-agnostic PyTorch implementation of a Convolutional Variational Autoencoder (VAE) trained on Fashion-MNIST (28×28 grayscale).
+A compact, device-agnostic PyTorch implementation of **generative vision models**, starting with a **Convolutional Variational Autoencoder (VAE)** trained on **Fashion-MNIST (28×28 grayscale)** and expanding to **GAN variants** on a dedicated branch.
 
 This project is designed to run with the same training code on:
 - CPU (any machine)
 - NVIDIA GPU (CUDA build of PyTorch)
 - AMD GPU on Windows (DirectML via `torch-directml`, when installed)
+
+## Models and branches
+
+| Model | Status | Where |
+|------|--------|-------|
+| Convolutional VAE (Fashion-MNIST) | ✅ Implemented | `master` (tag: `v0.1-vae`) |
+| GAN / WGAN training | 🟡 In progress / expanding | `gan` branch (see branch README + scripts) |
+
+> Rationale: the VAE baseline stays stable on `master`, while GAN work iterates on `gan`.
 
 ## What this project demonstrates
 - A complete VAE pipeline: encoder → (mu, logvar) → reparameterization → decoder logits
@@ -14,12 +23,16 @@ This project is designed to run with the same training code on:
   - reconstructions (input vs reconstructed)
   - unconditional samples (z ~ N(0, I))
   - latent interpolations (mu-space)
+- Practical reproducibility habits:
+  - CLI args for key hyperparameters
+  - deterministic seeds (where feasible)
+  - artifact logging (metrics + images)
 
 ## Repository layout
 ```text
-portable-vae-fashionmnist/
+<repo-root>/
   src/
-    model.py        # ConvVAE + loss
+    model.py        # ConvVAE + loss (VAE baseline)
     train.py        # training loop, device selection, saving, metrics
     viz.py          # image grid + reconstruction visualizations
   data/             # dataset downloaded here (gitignored)
@@ -32,6 +45,7 @@ portable-vae-fashionmnist/
 ```
 
 ## Setup (Windows / PyCharm)
+
 Create a virtual environment:
 ```powershell
 py -3.11 -m venv .venv
@@ -94,7 +108,7 @@ python .\src\train.py --resume artifacts\best.pt --epochs 30 --save_best
 During training, the script writes:
 
 - `artifacts/metrics.csv`
-  - Per-epoch averages for: `total`, `recon`, `kl` (and possibly `beta_eff` if you log it)
+  - Per-epoch averages for: `total`, `recon`, `kl` (and possibly `beta_eff` if logged)
 - `artifacts/recon_epochXXX.png`
   - Input images paired with reconstructions (same image index)
 - `artifacts/samples_epochXXX.png`
@@ -109,9 +123,19 @@ During training, the script writes:
 - `kl`: KL divergence between `q(z|x)` and `N(0, I)` (non-zero indicates latent usage)
 - `total = recon + beta * kl`
 
-## This repo includes a GAN implementation
-The VAE baseline lives on the `master` branch (tag: `v0.1-vae`).
+## GAN work (branch)
+The GAN implementation is developed on the **`gan` branch**.
 
-A GAN implementation is developed on the **`gan` branch**:
-- Switch branches on GitHub to `gan` to view the GAN training code and results.
-- The `gan` branch adds WGAN training scripts while keeping the VAE baseline intact.
+Suggested workflow:
+```powershell
+git checkout gan
+# Inspect available entrypoints in src/ on that branch, then run --help on the trainer script.
+python -m src.<gan_training_entrypoint> --help
+```
+
+If you want `master` to remain a clean, stable baseline, keep experimental GAN changes on `gan` and cut releases/tags when a milestone is stable.
+
+## Roadmap
+- Consolidate model entrypoints behind a single CLI (e.g., `--model vae|dcgan|wgan-gp`)
+- Add lightweight tests (smoke import + forward pass + one train step)
+- Add CI (GitHub Actions) to run smoke tests on push
