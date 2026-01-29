@@ -1,0 +1,10 @@
+# Windows + DirectML (AMD/Intel/NVIDIA via DirectX 12)
+# Keep this in its own venv. Do NOT install a separate torch wheel here.
+
+torch-directml==0.2.5.dev240914
+torchvision==0.19.1
+
+numpy
+matplotlib
+tqdm
+pillow

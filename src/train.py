@@ -107,6 +107,34 @@ def save_recons_and_samples(model, x_batch, device, out_dir, epoch, z_dim):
         title="Samples (z ~ N(0,I))"
     )
 
+def _get_git_commit() -> str | None:
+    try:
+        out = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        return out if out else None
+    except Exception:
+        return None
+
+
+def write_run_meta(args, device, out_dir: str) -> None:
+    meta = {
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "git_commit": _get_git_commit(),
+        "python_version": sys.version.split()[0],
+        "platform": platform.platform(),
+        "torch_version": getattr(torch, "__version__", None),
+        "cuda_available": torch.cuda.is_available(),
+        "device": str(device),
+        "args": vars(args),
+    }
+
+    path = os.path.join(out_dir, "run_meta.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2, sort_keys=True)
+
 
 def _get_git_commit() -> str | None:
     try:

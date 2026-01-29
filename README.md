@@ -1,4 +1,4 @@
-# Generative Models (PyTorch) — VAE baseline, expanding to GANs
+# PyTorch Generative Models (Fashion-MNIST): VAE + GAN (WIP)
 
 A compact, device-agnostic PyTorch implementation of **generative vision models**, starting with a **Convolutional Variational Autoencoder (VAE)** trained on **Fashion-MNIST (28×28 grayscale)** and expanding to **GAN variants** on a dedicated branch.
 
@@ -6,6 +6,12 @@ This project is designed to run with the same training code on:
 - CPU (any machine)
 - NVIDIA GPU (CUDA build of PyTorch)
 - AMD GPU on Windows (DirectML via `torch-directml`, when installed)
+
+## Quickstart Guide
+
+Simply run train.py from src folder. Results will be saved in the artifacts folder.
+
+Arguments are detailed below for finer adjustment.
 
 ## Models and branches
 
@@ -57,18 +63,18 @@ python -m pip install --upgrade pip
 
 #### CPU-only (portable baseline)
 ```powershell
-pip install torch torchvision matplotlib tqdm
+pip install -r ./requirements/requirements-cpu.txt
 ```
 
 #### NVIDIA (CUDA)
 Install PyTorch/torchvision using the official PyTorch selector for your CUDA version, then:
 ```powershell
-pip install matplotlib tqdm
+pip install -r ./requirements/requirements-nvidia-cu118.txt
 ```
 
 #### AMD on Windows (DirectML)
 ```powershell
-pip install torch-directml torchvision matplotlib tqdm
+pip install -r ./requirements/requirements-directml.txt
 ```
 
 Notes:
@@ -123,19 +129,13 @@ During training, the script writes:
 - `kl`: KL divergence between `q(z|x)` and `N(0, I)` (non-zero indicates latent usage)
 - `total = recon + beta * kl`
 
-## GAN work (branch)
-The GAN implementation is developed on the **`gan` branch**.
+## Results
 
-Suggested workflow:
-```powershell
-git checkout gan
-# Inspect available entrypoints in src/ on that branch, then run --help on the trainer script.
-python -m src.<gan_training_entrypoint> --help
-```
+> These example outputs were generated using the VAE on Fashion-MNIST training pipeline.
 
-If you want `master` to remain a clean, stable baseline, keep experimental GAN changes on `gan` and cut releases/tags when a milestone is stable.
-
-## Roadmap
-- Consolidate model entrypoints behind a single CLI (e.g., `--model vae|dcgan|wgan-gp`)
-- Add lightweight tests (smoke import + forward pass + one train step)
-- Add CI (GitHub Actions) to run smoke tests on push
+**VAE Samples**
+![Sample Epoch](examples/vae_samples.png)
+**VAE Reconstructions**
+![Sample Recon](examples/vae_recon.png)
+**VAE Interpolation**
+![Sample Interp](examples/vae_interp.png)
