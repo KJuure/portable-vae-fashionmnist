@@ -1,5 +1,7 @@
 # PyTorch Generative Models (Fashion-MNIST): VAE + GAN (WIP)
 
+![CI](../../actions/workflows/ci.yml/badge.svg)
+
 A compact, device-agnostic PyTorch implementation of **generative vision models**, starting with a **Convolutional Variational Autoencoder (VAE)** trained on **Fashion-MNIST (28×28 grayscale)** and expanding to **GAN variants** on a dedicated branch.
 
 This project is designed to run with the same training code on:
