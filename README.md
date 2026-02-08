@@ -11,9 +11,29 @@ This project is designed to run with the same training code on:
 
 ## Quickstart Guide
 
-Simply run train.py from src folder. Results will be saved in the artifacts folder.
+### CPU
+```powershell
+pip install -r requirements/requirements-cpu.txt
+pip install pytest
+pytest -q
+python -m src.train --epochs 1
+```
 
-Arguments are detailed below for finer adjustment.
+### NVIDIA (CUDA 11.8)
+```powershell
+pip install -r requirements/requirements-nvidia-cu118.txt
+pip install pytest
+pytest -q
+python -m src.train --epochs 1 --device cuda
+```
+
+### Windows DirectML (AMD / Intel GPU)
+```powershell
+pip install -r requirements/requirements-directml.txt
+pip install pytest
+pytest -q
+python -m src.train --epochs 1 --device directml
+```
 
 ## Models and branches
 
